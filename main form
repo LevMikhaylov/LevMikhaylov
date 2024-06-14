@@ -1,0 +1,190 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using MySql.Data.MySqlClient;
+using System.Text.RegularExpressions;
+using System.IO;
+namespace Practise
+{
+
+    public partial class Form4 : Form
+    {
+        private MySqlConnection connection;
+        // Параметры из файла конфигурации
+        private string _logDirectory;
+        private string _logMask;
+        private string _regexPattern;
+
+        // Файл конфигурации
+        private string _configFilePath = "config.txt";
+        public Form4()
+        {
+            InitializeComponent();
+            string connectionString = "Server=localhost;Database=iipixxiimikhaylovln;Uid=root;Pwd=Pa$$w0rd;";
+            connection = new MySqlConnection(connectionString);
+            connection.Open();
+            LoadConfiguration();
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                var startDate = dateTimePicker1.Value;
+                var endDate = dateTimePicker2.Value;
+                string query = $"SELECT * FROM ApacheLogs WHERE date_time BETWEEN '{startDate}' AND '{endDate}';";
+                MySqlDataAdapter dataAdapter = new MySqlDataAdapter(query, connection);
+                DataTable dt = new DataTable();
+                dataAdapter.Fill(dt);
+                dataGridView1.DataSource = dt;
+            }
+            catch (InvalidOperationException ex)
+            {
+                MessageBox.Show(ex.Message, "Error");
+            }
+            catch (MySqlException ex)
+            {
+                MessageBox.Show(ex.Message, "Ошибка");
+            }
+        }
+
+        private void button4_Click(object sender, EventArgs e)
+        {
+            Form2 form = new Form2();
+            form.Show();
+        }
+
+        private void button2_Click(object sender, EventArgs e)
+        {
+            DateTime startDate = dateTimePicker1.Value;
+            DateTime endDate = dateTimePicker2.Value;
+
+            // Получение IP-фильтра
+            string ipFilter = textBox2.Text;
+
+            // Получение JSON-строки
+            string json = GetLogsAsJSON(startDate, endDate, ipFilter);
+
+            // Вывод JSON-строки в текстовое поле
+            textBox1.Text = json;
+        }
+
+        private void button3_Click(object sender, EventArgs e)
+        {
+            SaveConfiguration();
+            MessageBox.Show("Настройки успешно сохранены.");
+        }
+        private string GetLogsAsJSON(DateTime startDate, DateTime endDate, string ipFilter)
+        {
+            try
+            {
+
+                // Создание SQL-запроса
+                string sql = "SELECT * FROM ApacheLogs WHERE date_time >= @StartDate AND date_time <= @EndDate";
+                if (!string.IsNullOrEmpty(ipFilter))
+                {
+                    sql += " AND ip_address = @IPAddress";
+                }
+
+                // Создание объекта MySqlCommand
+                using (MySqlCommand command = new MySqlCommand(sql, connection))
+                {
+                    // Добавление параметров
+                    command.Parameters.AddWithValue("@StartDate", startDate);
+                    command.Parameters.AddWithValue("@EndDate", endDate);
+                    if (!string.IsNullOrEmpty(ipFilter))
+                    {
+                        command.Parameters.AddWithValue("@IPAddress", ipFilter);
+                    }
+
+                    // Выполнение запроса
+                    using (MySqlDataReader reader = command.ExecuteReader())
+                    {
+                        // Создание JSON-строки
+                        StringBuilder jsonBuilder = new StringBuilder();
+                        jsonBuilder.Append("[");
+
+                        // Чтение данных из таблицы
+                        bool firstRow = true;
+                        while (reader.Read())
+                        {
+                            if (!firstRow)
+                            {
+                                jsonBuilder.Append(",");
+                            }
+                            firstRow = false;
+
+                            jsonBuilder.Append("{");
+                            jsonBuilder.Append("\"IPAddress\":\"" + reader.GetString("ip_address") + "\",");
+                            jsonBuilder.Append("\"DateTime\":\"" + reader.GetDateTime("date_time").ToString("yyyy-MM-ddTHH:mm:ss") + "\",");
+                            jsonBuilder.Append("\"RequestURL\":\"" + reader.GetString("request_url") + "\",");
+                            jsonBuilder.Append("\"StatusCode\":" + reader.GetInt32("status_code"));
+                            jsonBuilder.Append("}");
+                        }
+
+                        jsonBuilder.Append("]");
+
+                        // Возвращение JSON-строки
+                        return jsonBuilder.ToString();
+                    }
+                }
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                MessageBox.Show(ex.Message);
+                return "";
+            }
+        }
+        private void LoadConfiguration()
+        {
+            // Проверка существования файла конфигурации
+            if (File.Exists(_configFilePath))
+            {
+                // Загрузка настроек из файла
+                using (StreamReader reader = new StreamReader(_configFilePath))
+                {
+                    string line;
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        string[] parts = line.Split('=');
+                        if (parts.Length == 2)
+                        {
+                            switch (parts[0].Trim())
+                            {
+                                case "LogDirectory":
+                                    _logDirectory = parts[1].Trim();
+                                    break;
+                                case "LogMask":
+                                    _logMask = parts[1].Trim();
+                                    break;
+                                case "RegexPattern":
+                                    _regexPattern = parts[1].Trim();
+                                    break;
+                            }
+                        }
+                        else
+                        {
+                            SaveConfiguration();
+                        }
+                    }
+                }
+            }
+        }
+        private void SaveConfiguration()
+        {
+            // Сохранение настроек в файл config.txt
+            using (StreamWriter writer = new StreamWriter(_configFilePath))
+            {
+                writer.WriteLine("LogDirectory=" + textBox3.Text);
+                writer.WriteLine("LogMask=" + textBox4.Text);
+                writer.WriteLine("RegexPattern=" + textBox5.Text);
+            }
+        }
+    }
+}
